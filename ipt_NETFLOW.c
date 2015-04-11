@@ -624,6 +624,12 @@ static int nf_seq_show(struct seq_file *seq, void *v)
 #ifdef ENABLE_PROMISC
 		t.pkt_promisc	+= st->pkt_promisc;
 		t.pkt_promisc_drop += st->pkt_promisc_drop;
+
+		t.promisc_noshare	+= st->promisc_noshare;
+		t.promisc_stack_pull	+= st->promisc_stack_pull;
+		t.promisc_iphdr_pull	+= st->promisc_iphdr_pull;
+		t.promisc_ipver		+= st->promisc_ipver;
+		t.promisc_proto		+= st->promisc_proto;
 #endif
 		t.truncated	+= st->truncated;
 		t.frags		+= st->frags;
@@ -674,6 +680,12 @@ static int nf_seq_show(struct seq_file *seq, void *v)
 	    promisc? "enabled" : "disabled",
 	    t.pkt_promisc,
 	    t.pkt_promisc_drop);
+	seq_printf(seq, "Promisc drop stat: noshare %llu, stack %llu, iphdr %llu, ipver %llu, proto %llu\n",
+	    t.promisc_noshare,
+	    t.promisc_stack_pull,
+	    t.promisc_iphdr_pull,
+	    t.promisc_ipver,
+	    t.promisc_proto);
 #endif
 
 #ifdef CONFIG_NF_NAT_NEEDED
@@ -1286,8 +1298,10 @@ static int promisc_rcv(struct sk_buff *skb, struct net_device *dev, struct packe
 
 	NETFLOW_STAT_INC(pkt_promisc);
 
-	if ((skb = skb_share_check(skb, GFP_ATOMIC)) == NULL)
+	if ((skb = skb_share_check(skb, GFP_ATOMIC)) == NULL) {
+		NETFLOW_STAT_INC(promisc_noshare);
 		goto drop;
+	}
 
 	/* Note about vlans:
 	 * - older kernels will pass raw packet;
@@ -1315,19 +1329,25 @@ static int promisc_rcv(struct sk_buff *skb, struct net_device *dev, struct packe
 		do {
 			mpls = (struct mpls_label *)(skb->data + stack_len);
 			stack_len += MPLS_HLEN;
-			if (unlikely(!pskb_may_pull(skb, stack_len)))
+			if (unlikely(!pskb_may_pull(skb, stack_len))) {
+				NETFLOW_STAT_INC(promisc_stack_pull);
 				goto drop;
+			}
 		} while (!(mpls->entry & htonl(MPLS_LS_S_MASK)));
 
 		skb_pull(skb, stack_len);
 		skb_reset_network_header(skb);
 
-		if (!pskb_may_pull(skb, 1))
+		if (!pskb_may_pull(skb, 1)) {
+			NETFLOW_STAT_INC(promisc_iphdr_pull);
 			goto drop;
+		}
 		switch (ip_hdr(skb)->version) {
 		case 4:  skb->protocol = htons(ETH_P_IP);   break;
 		case 6:  skb->protocol = htons(ETH_P_IPV6); break;
-		default: goto drop;
+		default:
+			 NETFLOW_STAT_INC(promisc_ipver);
+			 goto drop;
 		}
 	}
 # endif
@@ -1336,6 +1356,8 @@ static int promisc_rcv(struct sk_buff *skb, struct net_device *dev, struct packe
 		return promisc4_rcv(skb, dev, pt, orig_dev);
 	case htons(ETH_P_IPV6):
 		return promisc6_rcv(skb, dev, pt, orig_dev);
+	default:
+		NETFLOW_STAT_INC(promisc_proto);
 	}
 drop:
 	NETFLOW_STAT_INC(pkt_promisc_drop);

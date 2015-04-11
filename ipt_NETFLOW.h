@@ -439,6 +439,12 @@ struct ipt_netflow_stat {
 #ifdef ENABLE_PROMISC
 	u64 pkt_promisc;		// how much packets passed promisc code
 	u64 pkt_promisc_drop;		// how much packets discarded
+
+	u64 promisc_noshare;
+	u64 promisc_stack_pull;
+	u64 promisc_iphdr_pull;
+	u64 promisc_ipver;
+	u64 promisc_proto;
 #endif
 	/* above is grouped for cache */
 	unsigned int truncated;		// packets stat (drop)

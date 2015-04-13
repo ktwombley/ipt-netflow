@@ -1327,12 +1327,12 @@ static int promisc_rcv(struct sk_buff *skb, struct net_device *dev, struct packe
 		const struct mpls_label *mpls;
 
 		do {
-			mpls = (struct mpls_label *)(skb->data + stack_len);
 			stack_len += MPLS_HLEN;
 			if (unlikely(!pskb_may_pull(skb, stack_len))) {
 				NETFLOW_STAT_INC(promisc_stack_pull);
 				goto drop;
 			}
+			mpls = (struct mpls_label *)(skb->data + stack_len - MPLS_HLEN);
 		} while (!(mpls->entry & htonl(MPLS_LS_S_MASK)));
 
 		skb_pull(skb, stack_len);
@@ -1346,6 +1346,10 @@ static int promisc_rcv(struct sk_buff *skb, struct net_device *dev, struct packe
 		case 4:  skb->protocol = htons(ETH_P_IP);   break;
 		case 6:  skb->protocol = htons(ETH_P_IPV6); break;
 		default:
+			 printk(KERN_DEBUG "ipt_NETFLOW: protocol: %02x stack_len: %u skb_len: %u skb_data_len: %u skb_mac_len: %u\n",
+			     ip_hdr(skb)->version, stack_len, skb->len, skb->data_len, skb->mac_len);
+			 print_hex_dump_bytes("", DUMP_PREFIX_OFFSET,
+			     skb_mac_header(skb), skb->data - skb_mac_header(skb) + 1);
 			 NETFLOW_STAT_INC(promisc_ipver);
 			 goto drop;
 		}
